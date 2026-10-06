@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": false,
+    "outDir": "node_modules/.tmp/vent-tests",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "target": "ES2020",
+    "types": ["node"],
+    "skipLibCheck": true
+  },
+  "include": ["tests/ventilation.test.ts", "src/domain/**/*.ts", "src/data/types.ts", "src/data/local-store.ts"]
+}

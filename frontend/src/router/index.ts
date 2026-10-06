@@ -12,6 +12,8 @@ const Cutter = () => import('@/views/cutter/index.vue')
 const Segmentprod = () => import('@/views/segmentprod/index.vue')
 const Mortar = () => import('@/views/mortar/index.vue')
 const Ventilation = () => import('@/views/ventilation/index.vue')
+const VentilationWatch = () => import('@/views/ventilation/watch.vue')
+const VentilationInspection = () => import('@/views/ventilation/inspection.vue')
 const Building = () => import('@/views/building/index.vue')
 const Utility = () => import('@/views/utility/index.vue')
 const Progress = () => import('@/views/progress/index.vue')
@@ -35,6 +37,8 @@ const router = createRouter({
     { path: '/segmentprod', name: 'segmentprod', component: Segmentprod },
     { path: '/mortar', name: 'mortar', component: Mortar },
     { path: '/ventilation', name: 'ventilation', component: Ventilation },
+    { path: '/ventilation/watch', name: 'ventilation-watch', component: VentilationWatch },
+    { path: '/ventilation/inspection', name: 'ventilation-inspection', component: VentilationInspection },
     { path: '/building', name: 'building', component: Building },
     { path: '/utility', name: 'utility', component: Utility },
     { path: '/progress', name: 'progress', component: Progress },

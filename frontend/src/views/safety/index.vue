@@ -3,7 +3,7 @@
     <header class="page-head">
       <div>
         <h2>安全巡检管理</h2>
-        <p class="page-desc">维护巡检记录，围绕巡检编号、巡检区域、巡检项目、发现问题做登记、筛选与状态流转。</p>
+        <p class="page-desc">维护巡检记录，围绕巡检编号、巡检区域、巡检项目、发现问题做登记、筛选与状态流转；通风故障隐患与通风看板同一份取数。</p>
       </div>
       <div class="page-actions">
         <button class="btn primary" type="button" @click="openCreate">登记巡检记录</button>
@@ -16,7 +16,16 @@
         <span class="stat-label">{{ item.label }}</span>
         <strong class="stat-value">{{ item.value }}</strong>
       </article>
+      <article class="stat-card stat-aligned">
+        <span class="stat-label">通风故障隐患（＝看板故障机组 {{ ventFaultCount }} 台）</span>
+        <strong class="stat-value error-text">{{ openVentHazards.length }}</strong>
+      </article>
     </div>
+
+    <p class="align-note">
+      对账口径：通风故障机组 {{ ventFaultCount }} 台 ↔ 联动隐患待整改 {{ openVentHazards.length }} 条，两边由同一份算法结论生成，不允许各说各话。
+      <RouterLink to="/ventilation">去通风看板核对</RouterLink>
+    </p>
 
     <p class="status-legend">
       <span v-for="item in statusSummary" :key="item.status" class="legend-item">
@@ -63,8 +72,40 @@
       </tbody>
     </table>
 
+    <h3 class="block-title">通风机组联动隐患（别处明细与这里联动，取数收在一份）</h3>
+    <table class="data-table">
+      <thead>
+        <tr><th>隐患编号</th><th>机组编号</th><th>工区</th><th>安装位置</th><th>隐患内容</th><th>来源</th><th>等级</th><th>立项时间</th><th>状态</th><th>操作</th></tr>
+      </thead>
+      <tbody>
+        <tr v-for="hazard in filteredHazards" :key="hazard.id" :class="{ 'row-closed': hazard.status === '已闭环' }">
+          <td>{{ hazard.id }}</td>
+          <td>
+            <RouterLink :to="{ path: '/ventilation', query: { focus: String(hazard.fanId) } }">{{ hazard.fanCode }}</RouterLink>
+          </td>
+          <td>{{ hazard.area }}</td>
+          <td>{{ hazard.location }}</td>
+          <td>{{ hazard.title }}</td>
+          <td>{{ hazard.source }}</td>
+          <td :class="hazard.level === '重大' ? 'error-text' : ''">{{ hazard.level }}</td>
+          <td>{{ formatTime(hazard.openedAt) }}</td>
+          <td>{{ hazard.status }}{{ hazard.closedAt ? ' · ' + formatTime(hazard.closedAt) : '' }}</td>
+          <td class="row-actions">
+            <button v-if="hazard.status === '待整改' && canClose" class="link" type="button" @click="closeLinkedHazard(hazard.id)">
+              确认闭环
+            </button>
+            <span v-else-if="hazard.status === '待整改'" class="muted-text">安全员可闭环</span>
+            <span v-else class="muted-text">—</span>
+          </td>
+        </tr>
+        <tr v-if="!filteredHazards.length">
+          <td colspan="10" class="empty-state">没有通风联动隐患（含已闭环记录）</td>
+        </tr>
+      </tbody>
+    </table>
+
     <footer class="page-foot">
-      <span>共 {{ total }} 条安全巡检记录</span>
+      <span>共 {{ total }} 条安全巡检记录；联动隐患 {{ ventHazards.length }} 条（待整改 {{ openVentHazards.length }} 条）</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
   </section>
@@ -72,6 +113,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 
 import {
   downloadEntries,
@@ -79,19 +121,39 @@ import {
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
+import {
+  closeHazard,
+  ensureVentReady,
+  getBoardSummary,
+  getLinkedHazards,
+} from '@/domain/ventilation/service'
+import type { VentHazard } from '@/domain/ventilation/types'
 import type { EntryRow } from '@/data/types'
+import { useSessionStore } from '@/stores/session'
+
+const store = useSessionStore()
+const route = useRoute()
 
 const meta = moduleMeta('safety')
 const columns = ["巡检编号", "巡检区域", "巡检项目", "发现问题", "隐患等级", "整改期限", "巡检人员", "巡检状态"]
 const actions = ["提交巡检", "派发整改", "确认闭环"]
 const statuses = ["待巡检", "已巡检", "待整改", "已闭环"]
-const stats = [{"label": "待巡检区域", "value": 0}, {"label": "待整改隐患", "value": 0}, {"label": "已闭环隐患", "value": 0}]
+const stats = ref([{"label": "待巡检区域", "value": 0}, {"label": "待整改隐患", "value": 0}, {"label": "已闭环隐患", "value": 0}])
 
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+const ventHazards = ref<VentHazard[]>([])
+const ventFaultCount = ref(0)
+const hazardOnly = ref(route.query.hazard === 'vent')
+
+const canClose = computed(() => store.operator.role === '安全员' || store.operator.role === '通风负责人')
+const openVentHazards = computed(() => ventHazards.value.filter((hazard) => hazard.status === '待整改'))
+const filteredHazards = computed(() =>
+  hazardOnly.value ? openVentHazards.value : [...ventHazards.value].sort((a, b) => (a.openedAt < b.openedAt ? 1 : -1)),
+)
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
@@ -99,8 +161,19 @@ const statusSummary = computed(() =>
   })),
 )
 
+function formatTime(iso: string): string {
+  return iso.replace('T', ' ').slice(0, 16)
+}
+
+function closeLinkedHazard(id: string) {
+  const result = closeHazard(id, store.operator)
+  errorMessage.value = result.ok ? '' : result.message
+  reload()
+}
+
 function resetFilters() {
   filters.value = {}
+  hazardOnly.value = false
   reload()
 }
 
@@ -125,9 +198,17 @@ function runAction(action: string, row: EntryRow) {
 function reload() {
   errorMessage.value = ''
   try {
+    ensureVentReady(new Date().toISOString())
     const payload = listEntries(meta.key, filters.value)
     rows.value = payload.items
     total.value = payload.total
+    ventHazards.value = getLinkedHazards()
+    ventFaultCount.value = getBoardSummary().fault
+    stats.value = [
+      { label: "待巡检区域", value: rows.value.filter((row) => String(row.status) === '待巡检').length },
+      { label: "待整改隐患", value: rows.value.filter((row) => String(row.status) === '待整改').length + openVentHazards.value.length },
+      { label: "已闭环隐患", value: rows.value.filter((row) => String(row.status) === '已闭环').length + ventHazards.value.filter((hazard) => hazard.status === '已闭环').length },
+    ]
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '安全巡检列表读取失败'
   }
@@ -135,3 +216,12 @@ function reload() {
 
 onMounted(reload)
 </script>
+
+<style scoped>
+.block-title { font-size: 14px; margin: 18px 0 8px; }
+.stat-aligned { border-color: #1f6feb; }
+.align-note { font-size: 12px; color: var(--muted); margin: 0 0 10px; }
+.row-closed { color: var(--muted); }
+.muted-text { color: var(--muted); }
+.error-text { color: #b42318; }
+</style>

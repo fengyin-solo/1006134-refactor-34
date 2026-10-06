@@ -57,3 +57,8 @@ export function resetRows(key: string): EntryRow[] {
 export function storageKey(): string {
   return STORAGE_KEY
 }
+
+/** 通风域首启迁移清掉旧通风模块后调用：强制下次从 localStorage 重读，避免内存缓存重复计数。 */
+export function invalidateRowsCache(): void {
+  cache = null
+}
