@@ -24,6 +24,27 @@
       </span>
     </p>
 
+    <section class="linked-hazards">
+      <h3>通风机组隐患联动（与洞内通风判定同源）</h3>
+      <p class="hazard-note">
+        故障机组 {{ ventSummary.fault }} 台、读数越限 {{ ventSummary.overLimit }} 台，与洞内通风页面、运营概览为同一份数。
+      </p>
+      <table v-if="ventHazards.length" class="data-table">
+        <thead>
+          <tr><th>机组编号</th><th>安装位置</th><th>生效结论</th><th>判定依据</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="hazard in ventHazards" :key="hazard.unitId">
+            <td>{{ hazard.机组编号 }}</td>
+            <td>{{ hazard.安装位置 }}</td>
+            <td>{{ hazard.verdict }}</td>
+            <td>{{ hazard.reasons.join('；') }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else class="hazard-note">当前无故障或越限机组。</p>
+    </section>
+
     <form class="filter-bar" @submit.prevent="reload">
       <label v-for="field in filterFields" :key="field" class="filter-item">
         <span>{{ field }}</span>
@@ -79,19 +100,30 @@ import {
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
+import { loadVentilationHazards, loadVentilationSummary } from '@/api/ventilation-service'
+import type { VentilationHazard, VentilationSummary } from '@/domain/ventilation'
 import type { EntryRow } from '@/data/types'
 
 const meta = moduleMeta('safety')
 const columns = ["巡检编号", "巡检区域", "巡检项目", "发现问题", "隐患等级", "整改期限", "巡检人员", "巡检状态"]
 const actions = ["提交巡检", "派发整改", "确认闭环"]
 const statuses = ["待巡检", "已巡检", "待整改", "已闭环"]
-const stats = [{"label": "待巡检区域", "value": 0}, {"label": "待整改隐患", "value": 0}, {"label": "已闭环隐患", "value": 0}]
 
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+const ventHazards = ref<VentilationHazard[]>([])
+const ventSummary = ref<VentilationSummary>({ total: 0, running: 0, stopped: 0, fault: 0, overLimit: 0, pending: 0 })
+
+// 统计卡与隐患清单联动：通风故障机组数直接取通风的同一份汇总，不另算。
+const stats = computed(() => [
+  { label: '待巡检区域', value: rows.value.filter((row) => row.status === '待巡检').length },
+  { label: '待整改隐患', value: rows.value.filter((row) => row.status === '待整改').length },
+  { label: '已闭环隐患', value: rows.value.filter((row) => row.status === '已闭环').length },
+  { label: '通风故障机组', value: ventSummary.value.fault },
+])
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
@@ -128,6 +160,8 @@ function reload() {
     const payload = listEntries(meta.key, filters.value)
     rows.value = payload.items
     total.value = payload.total
+    ventHazards.value = loadVentilationHazards()
+    ventSummary.value = loadVentilationSummary()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '安全巡检列表读取失败'
   }
@@ -135,3 +169,18 @@ function reload() {
 
 onMounted(reload)
 </script>
+
+<style scoped>
+.linked-hazards {
+  margin-bottom: 12px;
+}
+.linked-hazards h3 {
+  font-size: 14px;
+  margin: 0 0 6px;
+}
+.hazard-note {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+</style>

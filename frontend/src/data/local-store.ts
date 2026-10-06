@@ -40,12 +40,20 @@ export function listRows(key: string): EntryRow[] {
   return allRows()[key] ?? []
 }
 
-export function saveRows(key: string, rows: EntryRow[]): void {
-  const next = { ...allRows(), [key]: rows }
+function persist(next: Record<string, EntryRow[]>): void {
   cache = next
   if (typeof window !== 'undefined' && window.localStorage) {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
   }
+}
+
+export function saveRows(key: string, rows: EntryRow[]): void {
+  persist({ ...allRows(), [key]: rows })
+}
+
+// 一次落多个键：要么整批写进去，要么一条都不写，不留半条记录。
+export function saveMany(entries: Record<string, EntryRow[]>): void {
+  persist({ ...allRows(), ...entries })
 }
 
 export function resetRows(key: string): EntryRow[] {

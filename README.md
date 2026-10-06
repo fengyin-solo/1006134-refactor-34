@@ -68,4 +68,9 @@ npm run build
 - 字段、状态、动作与流转目标集中在 `frontend/src/data/modules.ts`；示例数据在
   `frontend/src/data/seed.ts`。
 - 状态流转只允许在 `local-service.ts` 里改，页面组件不做业务判断。
+- 通风机组的判定口径（有害气体浓度上限、送风量下限、生效结论优先级）全站只有一份，在
+  `frontend/src/domain/ventilation.ts`；看板、洞内通风（值守汇总/点检）、安全巡检都经
+  `frontend/src/api/ventilation-service.ts` 取数。阈值或算法调整只改 domain 文件并递增
+  `VENTILATION_RULE_VERSION`：已登记读数按新口径实时重算，停机留档按写入时的版本封存不回改。
+  回归校验：`cd frontend && npm run test:ventilation`。
 - 想回到初始数据：清掉浏览器里 `shield-tunnel-construction:entries` 这一项，或调用 `resetModule(模块)`。
